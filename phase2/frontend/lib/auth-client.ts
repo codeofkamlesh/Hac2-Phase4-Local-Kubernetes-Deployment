@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react"
 
 export const authClient = createAuthClient({
-    baseURL: "http://localhost:3000" // Point to Next.js, NOT FastAPI
+    // Ye automatic switch karega: Local computer par localhost, aur Vercel par Live URL
+    baseURL: process.env.NEXT_PUBLIC_AUTH_URL
 })
