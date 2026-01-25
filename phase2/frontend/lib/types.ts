@@ -60,6 +60,7 @@ export interface FilterParams {
   // Ye 2 properties missing thi jo error de rahi thi:
   dueDate?: string;   // 'today', 'week', 'overdue', 'all'
   sortBy?: string;    // 'newest', 'oldest', 'priority', 'due_date'
+  due_before?: string;
 
   // Legacy support
   sort?: string;
