@@ -17,6 +17,28 @@ import DarkModeToggle from './components/DarkModeToggle';
 import { useTaskFilters } from '@/hooks/useTaskFilters';
 import { useNotifications } from '@/hooks/useNotifications';
 
+// ✅ HELPER: Tags ko safely Array mein convert karne ka function
+const parseTags = (tags: any): string[] => {
+  if (!tags) return [];
+  if (Array.isArray(tags)) return tags; // Agar pehle se array hai to wapis kardo
+
+  if (typeof tags === 'string') {
+    try {
+      // 1. Agar Postgres format hai "{tag1,tag2}" -> usay JSON banayen
+      let clean = tags.replace(/^{/, '[').replace(/}$/, ']');
+
+      // 2. Agar single quotes hain to double karein (JSON format)
+      clean = clean.replace(/'/g, '"');
+
+      return JSON.parse(clean);
+    } catch (e) {
+      // 3. Agar JSON fail ho jaye (simple comma separated string)
+      return tags.split(',').map(t => t.trim()).filter(t => t);
+    }
+  }
+  return [];
+};
+
 const DashboardPage: React.FC = () => {
   const router = useRouter();
 
@@ -53,7 +75,12 @@ const DashboardPage: React.FC = () => {
         const result = await taskApi.getTasks();
 
         if (result.success) {
-          setTasks(result.data || []);
+          // ✅ FIX: Data aate hi tags ko sanitize kar liya
+          const cleanTasks = (result.data || []).map((task: any) => ({
+            ...task,
+            tags: parseTags(task.tags) // Yahan magic ho raha hai
+          }));
+          setTasks(cleanTasks);
         } else {
           setError(result.error || 'Failed to fetch tasks');
         }
@@ -100,7 +127,8 @@ const DashboardPage: React.FC = () => {
       if (filters.tag) {
         const tagQuery = filters.tag.toLowerCase();
         result = result.filter(task =>
-          task.tags && task.tags.some(t => t.toLowerCase().includes(tagQuery))
+          // Ab ye line crash nahi karegi kyunki humne parseTags use kiya hai
+          task.tags && Array.isArray(task.tags) && task.tags.some(t => t.toLowerCase().includes(tagQuery))
         );
       }
 
@@ -183,7 +211,12 @@ const DashboardPage: React.FC = () => {
     try {
       const result = await taskApi.createTask(taskData);
       if (result.success) {
-        setTasks([...tasks, result.data!]);
+        // Naye task ke tags ko bhi sanitize karein
+        const newTask = {
+            ...result.data!,
+            tags: parseTags(result.data!.tags)
+        };
+        setTasks([...tasks, newTask]);
         setShowModal(false);
       } else {
         setError(result.error || 'Failed to create task');
@@ -197,7 +230,12 @@ const DashboardPage: React.FC = () => {
     try {
       const result = await taskApi.updateTask(taskId, taskData);
       if (result.success) {
-        setTasks(tasks.map(task => task.id === taskId ? result.data! : task));
+        // Updated task ke tags ko bhi sanitize karein
+        const updatedTask = {
+            ...result.data!,
+            tags: parseTags(result.data!.tags)
+        };
+        setTasks(tasks.map(task => task.id === taskId ? updatedTask : task));
         setShowModal(false);
         setEditingTask(null);
       } else {
