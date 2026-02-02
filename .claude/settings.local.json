@@ -112,7 +112,12 @@
       "Bash(ls -la \"/mnt/e/Q4 hackathones/Todo-app-with-ai/specs/007-fix-next-themes-error/checklists/\"*.md)",
       "Bash(.specify/scripts/bash/create-new-feature.sh --json --number 8 --short-name \"fix-lucide-react-error\" \"Fix lucide-react module error\")",
       "Bash(cd /mnt/e/Q4 hackathones/Todo-app-with-ai/phase2/frontend)",
-      "Bash(python3 -m uvicorn main:app --reload --port 8001)"
+      "Bash(python3 -m uvicorn main:app --reload --port 8001)",
+      "Bash(.specify/scripts/bash/create-new-feature.sh --json \"Frontend Implementation of Multi-Tab AI Chat Widget for Todo Dashboard\n\nTarget Audience: Frontend Developers building Phase 3 of Todo App\nFocus: Creating a token-efficient, multi-session AI chat interface using OpenAI ChatKit and Next.js 14\n\nSuccess Criteria:\n- **Floating Entry Point:** A floating action button with a robotic icon \\(Lucide React\\) positioned at the bottom-right.\n- **Multi-Tab Architecture:**\n    - \"New Chat\" button creates a fresh, independent tab \\(clears context to save tokens\\).\n    - \"Delete Chat\" button removes the active tab.\n    - Users can switch between active tabs without losing the mock history of other tabs.\n- **ChatKit Integration:** Uses OpenAI ChatKit components \\(<Chat>, <MessageList>, <Input>\\) for the internal UI.\n- **Mock Functionality:** Simulates AI responses locally \\(e.g., replying \"Task added!\" without a real backend\\).\n- **Responsive Design:** Works seamlessly on mobile and desktop overlaying the dashboard.\n\nConstraints:\n- **Tech Stack:** Next.js 14 \\(App Router\\), Tailwind CSS, Lucide React.\n- **Documentation Source:** MUST use **Context7 MCP** to verify the latest implementation details for OpenAI ChatKit and Next.js 14 updates.\n- **State Management:** Manage multiple chat sessions \\(arrays of messages\\) in local state for now.\n- **Styling:** Match the existing Phase 2 dashboard aesthetics \\(Clean, Modern, Dark/Light mode compatible\\).\n\nNot Building:\n- Real Backend integration \\(FastAPI/Python\\).\n- Database persistence \\(Neon DB\\).\n- Real OpenAI API calls \\(Agents SDK\\).\n- User Authentication logic \\(assumes session exists from Phase 2\\).\" --number 1 --short-name \"ai-chat-widget\")",
+      "Bash(chmod +x .specify/scripts/bash/create-new-feature.sh)",
+      "Bash(npm install @types/uuid --save-dev)",
+      "Bash(npm install --save-dev dotenv)",
+      "Bash(npm install date-fns)"
     ]
   }
 }
