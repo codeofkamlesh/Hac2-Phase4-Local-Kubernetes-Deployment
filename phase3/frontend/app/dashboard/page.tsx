@@ -392,7 +392,34 @@ const DashboardPage: React.FC = () => {
       </main>
 
       {/* Chat Widget - floating above all content */}
-      <ChatWidget />
+      <ChatWidget refreshTasks={() => {
+        // Refresh tasks function that re-fetches the user's tasks
+        const fetchTasks = async () => {
+          if (!session) return;
+
+          try {
+            setLoading(true);
+            const result = await taskApi.getTasks();
+
+            if (result.success) {
+              // Sanitize the task data (same as in the original effect)
+              const cleanTasks = (result.data || []).map((task: any) => ({
+                ...task,
+                tags: parseTags(task.tags)
+              }));
+              setTasks(cleanTasks);
+            } else {
+              setError(result.error || 'Failed to fetch tasks');
+            }
+          } catch (err) {
+            setError('An error occurred while fetching tasks');
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        fetchTasks();
+      }} />
     </div>
   );
 };

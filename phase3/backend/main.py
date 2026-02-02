@@ -7,9 +7,10 @@ import uuid
 import os
 from datetime import datetime
 from cohere import Client as CohereClient
+import cohere
 from sqlmodel import Session, select
 
-from db import create_db_and_tables, test_connection
+from db import create_db_and_tables, test_connection, get_session
 from models import Message, Conversation, MessageRoleEnum, Task, User
 from tools import (
     add_task,
@@ -20,6 +21,32 @@ from tools import (
     get_conversation_history,
     add_message_to_conversation
 )
+
+
+def ensure_user_exists(session: Session, user_id: str) -> User:
+    """
+    Helper function to ensure user exists in the database.
+    If user doesn't exist, creates a new user with the given ID.
+    """
+    user = session.get(User, user_id)
+    if not user:
+        print(f"🔍 User {user_id} not found in DB. Creating now...")
+        new_user = User(
+            id=user_id,
+            email=f"{user_id}@placeholder.com",
+            name="App User",
+            email_verified=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        session.add(new_user)
+        session.commit()
+        session.refresh(new_user)
+        print(f"✅ User Created. ID: {user_id}")
+        return new_user
+    else:
+        print(f"✅ User Found. ID: {user_id}")
+        return user
 
 import os
 from dotenv import load_dotenv
@@ -32,6 +59,10 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     print("\n" + "="*50)
     print("🚀 Starting Todo API - Phase II with AI Backend")
+
+    # API Key Check
+    key_status = "✅ Found" if (os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")) else "❌ MISSING"
+    print(f"🔑 Cohere API Key Check: {key_status}")
 
     # Test Connection
     if test_connection():
@@ -81,7 +112,7 @@ class ChatResponse(BaseModel):
 
 
 def get_cohere_client():
-    api_key = os.getenv("COHERE_API_KEY")
+    api_key = os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Cohere API key not configured")
     return CohereClient(api_key=api_key)
@@ -98,8 +129,15 @@ async def chat_endpoint(
     Integrates with MCP tools for task operations.
     """
     try:
+        # Paranoid Logging Step 1: Request received
+        print(f"📩 Request received from UserID: {request.user_id}")
+
+        # Robust User Sync: Call helper function immediately at start
+        user = ensure_user_exists(session, request.user_id)
+
         # If no conversation_id is provided, create a new conversation
         if not request.conversation_id:
+            print("💾 Creating new conversation...")
             conversation_id = str(uuid.uuid4())
 
             # Create new conversation record
@@ -111,19 +149,27 @@ async def chat_endpoint(
             session.add(new_conversation)
             session.commit()
         else:
-            conversation_id = request.conversation_id
-
-            # Verify conversation exists and belongs to user
-            existing_conv = session.exec(
-                select(Conversation)
-                .where(Conversation.id == conversation_id)
-                .where(Conversation.user_id == request.user_id)
-            ).first()
-
+            existing_conv = session.get(Conversation, request.conversation_id)
             if not existing_conv:
-                raise HTTPException(status_code=404, detail="Conversation not found")
+                print(f"⚠️ Conversation {request.conversation_id} not found. Starting new conversation.")
+                # Reset conversation_id to None so a new one is created below
+                conversation_id = None
+                # Create a new conversation since the old one doesn't exist
+                conversation_id = str(uuid.uuid4())
 
-        # Add user message to conversation
+                # Create new conversation record
+                new_conversation = Conversation(
+                    id=conversation_id,
+                    user_id=request.user_id,
+                    title=f"Conversation {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                )
+                session.add(new_conversation)
+                session.commit()
+            else:
+                conversation_id = request.conversation_id
+
+        # Paranoid Logging Step 4: Save user message
+        print("💾 Saving User Message to DB...")
         user_message = Message(
             id=str(uuid.uuid4()),
             conversation_id=conversation_id,
@@ -143,6 +189,15 @@ async def chat_endpoint(
                 "role": msg["role"],
                 "message": msg["content"]
             })
+
+        # Token Conservation: Limit to last 10 messages to save tokens
+        chat_history = chat_history[-10:]
+
+        # Add the user's current message to the chat history
+        chat_history.append({
+            "role": "USER",
+            "message": request.message
+        })
 
         # Define the tools that Cohere can use
         tools = [
@@ -225,47 +280,107 @@ async def chat_endpoint(
             }
         ]
 
-        # Call Cohere with tools
-        response = cohere_client.chat(
-            message=request.message,
-            chat_history=chat_history,
-            tools=tools,
-            model="command-r-plus"  # Using a model with strong tool use capabilities
-        )
-
-        # Process the response
+        # Multi-Step Tool Execution Loop (Re-Act: Reason + Act)
+        turn_count = 0
+        max_turns = 5  # Safety limit to prevent infinite loops
         ai_response = ""
 
-        if hasattr(response, 'tool_calls') and response.tool_calls:
-            # Process tool calls
-            for tool_call in response.tool_calls:
-                tool_name = tool_call.name
-                tool_parameters = tool_call.parameters
+        while turn_count < max_turns:
+            turn_count += 1
+            print(f"🔄 Multi-step loop turn {turn_count}")
 
-                # Execute the appropriate tool
-                if tool_name == "add_task":
-                    result = add_task(session, **tool_parameters)
-                elif tool_name == "list_tasks":
-                    result = list_tasks(session, **tool_parameters)
-                elif tool_name == "complete_task":
-                    result = complete_task(session, **tool_parameters)
-                elif tool_name == "delete_task":
-                    result = delete_task(session, **tool_parameters)
-                elif tool_name == "update_task":
-                    result = update_task(session, **tool_parameters)
-                else:
-                    result = {"success": False, "message": f"Unknown tool: {tool_name}"}
+            # Paranoid Logging Step 5: Send to Cohere
+            print("🤖 Sending request to Cohere...")
 
-                # Add tool result to chat for follow-up
-                ai_response += f"\nTool result: {result.get('message', str(result))}"
-        else:
-            # If no tool was called, use the text response
-            if hasattr(response, 'text'):
-                ai_response = response.text
+            # Call Cohere with tools - using specific dated model with fallback
+            try:
+                response = cohere_client.chat(
+                    message="",  # Empty string for subsequent turns to process tool results
+                    chat_history=chat_history,
+                    tools=tools,
+                    model="command-r-08-2024",  # Using specific dated stable model
+                    max_tokens=150  # Token conservation: force concise responses
+                )
+            except (cohere.errors.NotFoundError, cohere.errors.UnauthorizedError) as e:
+                print(f"⚠️ Primary model failed: {e}. Falling back to command-light...")
+                # Fallback to command-light if primary model fails
+                response = cohere_client.chat(
+                    message="",  # Empty string for subsequent turns to process tool results
+                    chat_history=chat_history,
+                    tools=tools,
+                    model="command-light",  # Failsafe fallback model
+                    max_tokens=150  # Token conservation: force concise responses
+                )
+
+            # Check if there are tool calls
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                # Implement Strict Task Guardrails (The "3 Task Limit")
+                add_task_calls = [t for t in response.tool_calls if t.name == 'add_task']
+                if len(add_task_calls) > 3:
+                    # REJECT the request to save resources
+                    return ChatResponse(
+                        response="⚠️ Limit Reached: I can only add up to 3 tasks at a time to save resources. Please break your request into smaller parts.",
+                        conversation_id=conversation_id,
+                        timestamp=datetime.now()
+                    )
+
+                # Process tool calls
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.name
+                    tool_parameters = tool_call.parameters.copy()  # Create a copy to avoid modifying original
+
+                    # Paranoid Logging Step 6: Tool execution
+                    print(f"🔧 Tool Triggered: {tool_name} with Params: {tool_parameters}")
+
+                    # Execute the appropriate tool with user_id injection
+                    if tool_name == "add_task":
+                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        result = add_task(session, **tool_parameters)
+                    elif tool_name == "list_tasks":
+                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        result = list_tasks(session, **tool_parameters)
+                    elif tool_name == "complete_task":
+                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        result = complete_task(session, **tool_parameters)
+                    elif tool_name == "delete_task":
+                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        result = delete_task(session, **tool_parameters)
+                    elif tool_name == "update_task":
+                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        result = update_task(session, **tool_parameters)
+                    else:
+                        result = {"success": False, "message": f"Unknown tool: {tool_name}"}
+
+                    # Add tool result to chat for follow-up
+                    tool_result_msg = f"Tool result: {result.get('message', str(result))}"
+
+                    # Append the tool result to chat_history so the AI knows what happened
+                    chat_history.append({
+                        "role": "TOOL",
+                        "message": tool_result_msg
+                    })
+
+                    # Add to final response
+                    ai_response += f"\n{tool_result_msg}"
+
+                # Continue the loop to let the AI decide on next steps
+                continue
+
+            # If no tool calls, check for text response and break the loop
             else:
-                ai_response = "I processed your request, but I don't have a specific response to return."
+                if hasattr(response, 'text') and response.text:
+                    ai_response += f"\n{response.text}"
+
+                # Break the loop since there are no more tools to execute
+                break
+
+        # If we reached max turns without breaking naturally
+        if turn_count >= max_turns:
+            print(f"⚠️ Reached maximum turns ({max_turns}) in multi-step loop")
+            ai_response += f"\n⚠️ Maximum processing steps reached. Some actions may be incomplete."
 
         # Add AI response to conversation
+        print("📤 Sending Response to Client")
         ai_message = Message(
             id=str(uuid.uuid4()),
             conversation_id=conversation_id,
@@ -282,6 +397,9 @@ async def chat_endpoint(
         )
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ CRITICAL ERROR: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing chat request: {str(e)}")
 
 

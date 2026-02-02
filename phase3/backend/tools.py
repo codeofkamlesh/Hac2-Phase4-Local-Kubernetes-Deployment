@@ -10,7 +10,7 @@ import uuid
 from models import Task, User, Conversation, Message, PriorityEnum, MessageRoleEnum
 
 
-def add_task(session: Session, title: str, description: Optional[str] = None, priority: str = "medium") -> Dict[str, Any]:
+def add_task(session: Session, title: str, description: Optional[str] = None, priority: str = "medium", user_id: str = "") -> Dict[str, Any]:
     """
     Add a new task to the database
 
@@ -19,22 +19,35 @@ def add_task(session: Session, title: str, description: Optional[str] = None, pr
         title: Task title
         description: Optional task description
         priority: Task priority ('high', 'medium', 'low')
+        user_id: User ID to associate with the task
 
     Returns:
         Dictionary with success status and task info
     """
+    print(f"🛠️ Executing Tool: add_task with Params: {{'title': '{title}', 'description': '{description}', 'priority': '{priority}', 'user_id': '{user_id}'}}")
     try:
         # Validate priority
         if priority not in ["high", "medium", "low"]:
             priority = "medium"
 
+        # Handle enum conversion - convert string to enum if needed
+        priority_enum = priority
+        if isinstance(priority, str) and hasattr(PriorityEnum, priority.lower()):
+            priority_enum = PriorityEnum(priority.lower())
+        elif isinstance(priority, str):
+            priority_enum = PriorityEnum(priority)
+        elif hasattr(priority, 'value'):
+            priority_enum = priority  # Already an enum
+        else:
+            priority_enum = PriorityEnum(priority)
+
         # Create new task
         new_task = Task(
-            user_id="",  # This would come from the authenticated user context
+            user_id=user_id,  # Use the provided user_id
             title=title,
             description=description,
             completed=False,
-            priority=PriorityEnum(priority),
+            priority=priority_enum,
             due_date=None,  # Would be parsed from user request if needed
             recurring_interval=None,
             created_at=datetime.utcnow(),
@@ -45,6 +58,7 @@ def add_task(session: Session, title: str, description: Optional[str] = None, pr
         session.commit()
         session.refresh(new_task)
 
+        print("✅ Tool Execution Successful")
         return {
             "success": True,
             "message": f"Task '{title}' added successfully",
@@ -54,18 +68,19 @@ def add_task(session: Session, title: str, description: Optional[str] = None, pr
                 "title": new_task.title,
                 "description": new_task.description,
                 "completed": new_task.completed,
-                "priority": new_task.priority.value
+                "priority": new_task.priority.value if hasattr(new_task.priority, 'value') else new_task.priority
             }
         }
     except Exception as e:
         session.rollback()
+        print(f"❌ Tool Failed: {str(e)}")
         return {
             "success": False,
             "message": f"Failed to add task: {str(e)}"
         }
 
 
-def list_tasks(session: Session, status: Optional[str] = None, limit: int = 10) -> Dict[str, Any]:
+def list_tasks(session: Session, status: Optional[str] = None, limit: int = 10, user_id: str = "") -> Dict[str, Any]:
     """
     List tasks with optional filtering
 
@@ -73,13 +88,19 @@ def list_tasks(session: Session, status: Optional[str] = None, limit: int = 10) 
         session: Database session
         status: Filter by status ('completed', 'pending', None for all)
         limit: Maximum number of tasks to return
+        user_id: User ID to filter tasks by
 
     Returns:
         Dictionary with success status and task list
     """
+    print(f"🛠️ Executing Tool: list_tasks with Params: {{'status': '{status}', 'limit': {limit}, 'user_id': '{user_id}'}}")
     try:
         # Build query
         query = select(Task)
+
+        # Filter by user_id if provided
+        if user_id:
+            query = query.where(Task.user_id == user_id)
 
         if status == "completed":
             query = query.where(Task.completed == True)
@@ -99,11 +120,12 @@ def list_tasks(session: Session, status: Optional[str] = None, limit: int = 10) 
                 "title": task.title,
                 "description": task.description,
                 "completed": task.completed,
-                "priority": task.priority.value,
+                "priority": task.priority.value if hasattr(task.priority, 'value') else task.priority,
                 "due_date": task.due_date.isoformat() if task.due_date else None,
                 "created_at": task.created_at.isoformat() if task.created_at else None
             })
 
+        print("✅ Tool Execution Successful")
         return {
             "success": True,
             "message": f"Retrieved {len(task_list)} tasks",
@@ -111,28 +133,38 @@ def list_tasks(session: Session, status: Optional[str] = None, limit: int = 10) 
             "count": len(task_list)
         }
     except Exception as e:
+        print(f"❌ Tool Failed: {str(e)}")
         return {
             "success": False,
             "message": f"Failed to list tasks: {str(e)}"
         }
 
 
-def complete_task(session: Session, task_id: str) -> Dict[str, Any]:
+def complete_task(session: Session, task_id: str, user_id: str = "") -> Dict[str, Any]:
     """
     Mark a task as completed
 
     Args:
         session: Database session
         task_id: ID of the task to complete
+        user_id: User ID to verify task ownership
 
     Returns:
         Dictionary with success status and task info
     """
+    print(f"🛠️ Executing Tool: complete_task with Params: {{'task_id': '{task_id}', 'user_id': '{user_id}'}}")
     try:
         # Find the task
-        task = session.exec(select(Task).where(Task.id == int(task_id))).first()
+        query = select(Task).where(Task.id == int(task_id))
+
+        # If user_id is provided, ensure the task belongs to the user
+        if user_id:
+            query = query.where(Task.user_id == user_id)
+
+        task = session.exec(query).first()
 
         if not task:
+            print(f"❌ Tool Failed: Task with ID {task_id} not found or does not belong to user {user_id}")
             return {
                 "success": False,
                 "message": f"Task with ID {task_id} not found"
@@ -145,6 +177,7 @@ def complete_task(session: Session, task_id: str) -> Dict[str, Any]:
         session.commit()
         session.refresh(task)
 
+        print("✅ Tool Execution Successful")
         return {
             "success": True,
             "message": f"Task '{task.title}' marked as completed",
@@ -156,28 +189,38 @@ def complete_task(session: Session, task_id: str) -> Dict[str, Any]:
         }
     except Exception as e:
         session.rollback()
+        print(f"❌ Tool Failed: {str(e)}")
         return {
             "success": False,
             "message": f"Failed to complete task: {str(e)}"
         }
 
 
-def delete_task(session: Session, task_id: str) -> Dict[str, Any]:
+def delete_task(session: Session, task_id: str, user_id: str = "") -> Dict[str, Any]:
     """
     Delete a task from the database
 
     Args:
         session: Database session
         task_id: ID of the task to delete
+        user_id: User ID to verify task ownership
 
     Returns:
         Dictionary with success status
     """
+    print(f"🛠️ Executing Tool: delete_task with Params: {{'task_id': '{task_id}', 'user_id': '{user_id}'}}")
     try:
         # Find the task
-        task = session.exec(select(Task).where(Task.id == int(task_id))).first()
+        query = select(Task).where(Task.id == int(task_id))
+
+        # If user_id is provided, ensure the task belongs to the user
+        if user_id:
+            query = query.where(Task.user_id == user_id)
+
+        task = session.exec(query).first()
 
         if not task:
+            print(f"❌ Tool Failed: Task with ID {task_id} not found or does not belong to user {user_id}")
             return {
                 "success": False,
                 "message": f"Task with ID {task_id} not found"
@@ -187,19 +230,21 @@ def delete_task(session: Session, task_id: str) -> Dict[str, Any]:
         session.delete(task)
         session.commit()
 
+        print("✅ Tool Execution Successful")
         return {
             "success": True,
             "message": f"Task '{task.title}' deleted successfully"
         }
     except Exception as e:
         session.rollback()
+        print(f"❌ Tool Failed: {str(e)}")
         return {
             "success": False,
             "message": f"Failed to delete task: {str(e)}"
         }
 
 
-def update_task(session: Session, task_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+def update_task(session: Session, task_id: str, updates: Dict[str, Any], user_id: str = "") -> Dict[str, Any]:
     """
     Update a task with new information
 
@@ -207,15 +252,24 @@ def update_task(session: Session, task_id: str, updates: Dict[str, Any]) -> Dict
         session: Database session
         task_id: ID of the task to update
         updates: Dictionary of fields to update
+        user_id: User ID to verify task ownership
 
     Returns:
         Dictionary with success status and updated task info
     """
+    print(f"🛠️ Executing Tool: update_task with Params: {{'task_id': '{task_id}', 'updates': {updates}, 'user_id': '{user_id}'}}")
     try:
         # Find the task
-        task = session.exec(select(Task).where(Task.id == int(task_id))).first()
+        query = select(Task).where(Task.id == int(task_id))
+
+        # If user_id is provided, ensure the task belongs to the user
+        if user_id:
+            query = query.where(Task.user_id == user_id)
+
+        task = session.exec(query).first()
 
         if not task:
+            print(f"❌ Tool Failed: Task with ID {task_id} not found or does not belong to user {user_id}")
             return {
                 "success": False,
                 "message": f"Task with ID {task_id} not found"
@@ -229,7 +283,16 @@ def update_task(session: Session, task_id: str, updates: Dict[str, Any]) -> Dict
         if "completed" in updates:
             task.completed = updates["completed"]
         if "priority" in updates and updates["priority"] in ["high", "medium", "low"]:
-            task.priority = PriorityEnum(updates["priority"])
+            # Handle enum conversion - convert string to enum if needed
+            priority_value = updates["priority"]
+            if isinstance(priority_value, str) and hasattr(PriorityEnum, priority_value.lower()):
+                task.priority = PriorityEnum(priority_value.lower())
+            elif isinstance(priority_value, str):
+                task.priority = PriorityEnum(priority_value)
+            elif hasattr(priority_value, 'value'):
+                task.priority = priority_value  # Already an enum
+            else:
+                task.priority = PriorityEnum(priority_value)
         if "due_date" in updates:
             # This would require parsing the date string appropriately
             task.due_date = updates["due_date"]
@@ -239,6 +302,7 @@ def update_task(session: Session, task_id: str, updates: Dict[str, Any]) -> Dict
         session.commit()
         session.refresh(task)
 
+        print("✅ Tool Execution Successful")
         return {
             "success": True,
             "message": f"Task '{task.title}' updated successfully",
@@ -247,11 +311,12 @@ def update_task(session: Session, task_id: str, updates: Dict[str, Any]) -> Dict
                 "title": task.title,
                 "description": task.description,
                 "completed": task.completed,
-                "priority": task.priority.value
+                "priority": task.priority.value if hasattr(task.priority, 'value') else task.priority
             }
         }
     except Exception as e:
         session.rollback()
+        print(f"❌ Tool Failed: {str(e)}")
         return {
             "success": False,
             "message": f"Failed to update task: {str(e)}"
@@ -279,7 +344,7 @@ def get_conversation_history(conversation_id: str, session: Session) -> list:
         message_list = []
         for msg in messages:
             message_list.append({
-                "role": msg.role.value,
+                "role": msg.role,
                 "content": msg.content,
                 "timestamp": msg.created_at.isoformat()
             })

@@ -1,4 +1,4 @@
-from sqlmodel import create_engine, Session
+from sqlmodel import create_engine, Session, text
 from typing import Generator
 import os
 from dotenv import load_dotenv
@@ -49,6 +49,7 @@ def create_db_and_tables():
     Create all database tables if they don't exist
     """
     from sqlmodel import SQLModel
+    # Import models to register them with SQLModel metadata
     from models import User, Task, Conversation, Message
 
     # Create all tables
@@ -61,8 +62,9 @@ def test_connection():
     """
     try:
         with Session(engine) as session:
-            # Try a simple query to test the connection
-            result = session.exec("SELECT 1").first()
+            # Try a simple query to test the connection using text()
+            # This fixes the SQLAlchemy 2.0 error
+            result = session.exec(text("SELECT 1")).first()
             return result is not None
     except Exception as e:
         print(f"Database connection test failed: {e}")
