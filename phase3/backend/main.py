@@ -22,6 +22,9 @@ from tools import (
     add_message_to_conversation
 )
 
+# System Preamble for Schema Enforcement
+SYSTEM_PREAMBLE = "You are a Task Assistant. You operate on 'User', 'Task' (id, title, description, priority, completed, dueDate, userId), 'Conversation', 'Message' tables. DO NOT hallucinate columns. Use tools strictly."
+
 
 def ensure_user_exists(session: Session, user_id: str) -> User:
     """
@@ -126,7 +129,7 @@ async def chat_endpoint(
 ):
     """
     Main chat endpoint that handles user messages and responds using Cohere AI.
-    Integrates with MCP tools for task operations.
+    Implements robust Re-Act loop with schema enforcement and crash-proof design.
     """
     try:
         # Paranoid Logging Step 1: Request received
@@ -180,24 +183,29 @@ async def chat_endpoint(
         session.commit()
 
         # Retrieve conversation history to provide context to the AI
-        conversation_history = get_conversation_history(conversation_id, session)
+        raw_history = get_conversation_history(conversation_id, session) if conversation_id else []
 
-        # Prepare the chat history for Cohere
-        chat_history = []
-        for msg in conversation_history:
-            chat_history.append({
-                "role": msg["role"],
-                "message": msg["content"]
-            })
+        # Implement Aggressive History Sanitization (The Fix)
+        sanitized_history = []
+        for msg in raw_history:
+            # CRITICAL: Force None to empty string
+            content = msg["content"] if msg["content"] is not None else ""
+            # Map database role values to Cohere-compatible values
+            db_role = msg["role"]
+            if db_role == "user":
+                cohere_role = "USER"
+            elif db_role == "assistant":
+                cohere_role = "CHATBOT"
+            else:
+                cohere_role = db_role.upper()  # Default to uppercase
+
+            sanitized_history.append({"role": cohere_role, "message": content})
 
         # Token Conservation: Limit to last 10 messages to save tokens
-        chat_history = chat_history[-10:]
+        sanitized_history = sanitized_history[-10:]
 
-        # Add the user's current message to the chat history
-        chat_history.append({
-            "role": "USER",
-            "message": request.message
-        })
+        # The user's current message is already in the database and retrieved in raw_history,
+        # so we don't need to add it again. The sanitized_history already contains it.
 
         # Define the tools that Cohere can use
         tools = [
@@ -280,118 +288,191 @@ async def chat_endpoint(
             }
         ]
 
-        # Multi-Step Tool Execution Loop (Re-Act: Reason + Act)
+        # Robust Re-Act Loop Implementation
+        current_message = request.message
+        current_tool_results = None
+
+        # Loop (while True):
         turn_count = 0
-        max_turns = 5  # Safety limit to prevent infinite loops
-        ai_response = ""
+        max_turns = 10  # Safety limit to prevent infinite loops
 
         while turn_count < max_turns:
             turn_count += 1
-            print(f"🔄 Multi-step loop turn {turn_count}")
+            print(f"🔄 Re-Act loop turn {turn_count}")
 
             # Paranoid Logging Step 5: Send to Cohere
             print("🤖 Sending request to Cohere...")
 
-            # Call Cohere with tools - using specific dated model with fallback
+            # DEBUG: Print the sanitized history before sending to Cohere
+            print(f"DEBUG: About to send clean_chat_history with {len(sanitized_history)} items:")
+            for idx, hist_item in enumerate(sanitized_history):
+                role = hist_item.get("role", "MISSING_ROLE")
+                message = hist_item.get("message", "MISSING_MESSAGE")
+                print(f"DEBUG[{idx}]: role='{role}', message='{message}', type_msg={type(message)}, is_none={message is None}")
+
+            # Comprehensive sanitization of chat_history before sending to Cohere
+            # Make a clean copy to ensure no None values
+            clean_chat_history = []
+            for idx, hist_item in enumerate(sanitized_history):
+                # Ensure each history item has both 'role' and 'message' with safe values
+                role = hist_item.get("role", "UNKNOWN")
+                message = hist_item.get("message")
+
+                if message is None:
+                    print(f"DEBUG: Sanitizing None message at index {idx}, role: {role}")
+                    message = " "  # Use space instead of empty string to avoid "no message" error
+                elif message == "":
+                    # Even empty strings might cause the error, so replace with space
+                    print(f"DEBUG: Converting empty message to space at index {idx}, role: {role}")
+                    message = " "
+
+                clean_chat_history.append({
+                    "role": str(role) if role is not None else "UNKNOWN",
+                    "message": str(message) if message is not None else " "
+                })
+
+            # Final verification
+            print(f"DEBUG: Final clean_chat_history: {clean_chat_history}")
+
+            # Call Cohere:
+            # response = cohere_client.chat(message=current_message, chat_history=sanitized_history, tool_results=current_tool_results, preamble=SYSTEM_PREAMBLE, ...)
             try:
                 response = cohere_client.chat(
-                    message="",  # Empty string for subsequent turns to process tool results
-                    chat_history=chat_history,
+                    message=current_message,
+                    chat_history=clean_chat_history,  # Use the completely sanitized version
+                    tool_results=current_tool_results,
                     tools=tools,
+                    preamble=SYSTEM_PREAMBLE,  # Pass the system preamble
                     model="command-r-08-2024",  # Using specific dated stable model
-                    max_tokens=150  # Token conservation: force concise responses
+                    max_tokens=150,  # Token conservation: force concise responses
+                    temperature=0.3  # Lower temperature for more consistent behavior
                 )
             except (cohere.errors.NotFoundError, cohere.errors.UnauthorizedError) as e:
                 print(f"⚠️ Primary model failed: {e}. Falling back to command-light...")
                 # Fallback to command-light if primary model fails
                 response = cohere_client.chat(
-                    message="",  # Empty string for subsequent turns to process tool results
-                    chat_history=chat_history,
+                    message=current_message,
+                    chat_history=clean_chat_history,  # Use the completely sanitized version
+                    tool_results=current_tool_results,
                     tools=tools,
+                    preamble=SYSTEM_PREAMBLE,  # Pass the system preamble
                     model="command-light",  # Failsafe fallback model
-                    max_tokens=150  # Token conservation: force concise responses
+                    max_tokens=150,  # Token conservation: force concise responses
+                    temperature=0.3  # Lower temperature for more consistent behavior
                 )
 
-            # Check if there are tool calls
+            # If Tools Triggered:
             if hasattr(response, 'tool_calls') and response.tool_calls:
-                # Implement Strict Task Guardrails (The "3 Task Limit")
-                add_task_calls = [t for t in response.tool_calls if t.name == 'add_task']
-                if len(add_task_calls) > 3:
-                    # REJECT the request to save resources
-                    return ChatResponse(
-                        response="⚠️ Limit Reached: I can only add up to 3 tasks at a time to save resources. Please break your request into smaller parts.",
-                        conversation_id=conversation_id,
-                        timestamp=datetime.now()
-                    )
+                # Execute tools (inject user_id)
+                tool_results = []
 
-                # Process tool calls
+                # Add Assistant's response to history BEFORE processing tools
+                # Force message to be an empty string if it's None
+                assistant_msg_text = response.text if hasattr(response, 'text') and response.text else ""
+                sanitized_history.append({
+                    "role": "CHATBOT",
+                    "message": assistant_msg_text
+                })
+
+                # Paranoid Logging Step 6: Tool execution
+                print(f"🔧 Tools Triggered: {response.tool_calls}")
+
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.name
                     tool_parameters = tool_call.parameters.copy()  # Create a copy to avoid modifying original
 
-                    # Paranoid Logging Step 6: Tool execution
-                    print(f"🔧 Tool Triggered: {tool_name} with Params: {tool_parameters}")
-
-                    # Execute the appropriate tool with user_id injection
+                    # Execute the appropriate tool with user_id injection (strictly enforced)
                     if tool_name == "add_task":
-                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        tool_parameters["user_id"] = request.user_id  # Strictly inject user_id
                         result = add_task(session, **tool_parameters)
                     elif tool_name == "list_tasks":
-                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        tool_parameters["user_id"] = request.user_id  # Strictly inject user_id
                         result = list_tasks(session, **tool_parameters)
                     elif tool_name == "complete_task":
-                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        tool_parameters["user_id"] = request.user_id  # Strictly inject user_id
                         result = complete_task(session, **tool_parameters)
                     elif tool_name == "delete_task":
-                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        tool_parameters["user_id"] = request.user_id  # Strictly inject user_id
                         result = delete_task(session, **tool_parameters)
                     elif tool_name == "update_task":
-                        tool_parameters["user_id"] = request.user_id  # <--- Inject this!
+                        tool_parameters["user_id"] = request.user_id  # Strictly inject user_id
                         result = update_task(session, **tool_parameters)
                     else:
                         result = {"success": False, "message": f"Unknown tool: {tool_name}"}
 
-                    # Add tool result to chat for follow-up
-                    tool_result_msg = f"Tool result: {result.get('message', str(result))}"
+                    # Build the tool result in the required format
+                    tool_result = {
+                        'call': tool_call,
+                        'outputs': [{'result': result}]
+                    }
+                    tool_results.append(tool_result)
 
-                    # Append the tool result to chat_history so the AI knows what happened
-                    chat_history.append({
-                        "role": "TOOL",
-                        "message": tool_result_msg
-                    })
+                # Append to History (Local Memory):
+                # Add User's tool invocation:
+                sanitized_history.append({
+                    "role": "USER",
+                    "message": ""  # As specified in requirements
+                })
 
-                    # Add to final response
-                    ai_response += f"\n{tool_result_msg}"
+                # Add Assistant's tool plan:
+                sanitized_history.append({
+                    "role": "CHATBOT",  # As specified in requirements
+                    "message": ""  # As specified in requirements
+                })
 
-                # Continue the loop to let the AI decide on next steps
+                # Prepare Next Turn:
+                # current_message = ""
+                # current_tool_results = tool_results_list
+                current_message = ""
+                current_tool_results = tool_results
+
+                # Continue to next turn
                 continue
 
-            # If no tool calls, check for text response and break the loop
-            else:
-                if hasattr(response, 'text') and response.text:
-                    ai_response += f"\n{response.text}"
+            # If Text Response:
+            if hasattr(response, 'text') and response.text and response.text.strip():
+                # Add Assistant's response to sanitized history as well
+                assistant_msg_text = response.text if hasattr(response, 'text') and response.text else ""
+                sanitized_history.append({
+                    "role": "CHATBOT",
+                    "message": assistant_msg_text
+                })
 
-                # Break the loop since there are no more tools to execute
-                break
+                # Save to DB
+                print("📤 Sending Response to Client")
+                ai_message = Message(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conversation_id,
+                    role=MessageRoleEnum.assistant,
+                    content=assistant_msg_text
+                )
+                session.add(ai_message)
+                session.commit()
 
-        # If we reached max turns without breaking naturally
-        if turn_count >= max_turns:
-            print(f"⚠️ Reached maximum turns ({max_turns}) in multi-step loop")
-            ai_response += f"\n⚠️ Maximum processing steps reached. Some actions may be incomplete."
+                # Return to User
+                return ChatResponse(
+                    response=assistant_msg_text,
+                    conversation_id=conversation_id,
+                    timestamp=datetime.now()
+                )
 
-        # Add AI response to conversation
-        print("📤 Sending Response to Client")
+            # Break if no more processing needed
+            break
+
+        # If we somehow reach here without a text response, return a default response
+        print("📤 Sending Default Response to Client")
+        default_response = "Processing completed."
         ai_message = Message(
             id=str(uuid.uuid4()),
             conversation_id=conversation_id,
             role=MessageRoleEnum.assistant,
-            content=ai_response
+            content=default_response
         )
         session.add(ai_message)
         session.commit()
 
         return ChatResponse(
-            response=ai_response,
+            response=default_response,
             conversation_id=conversation_id,
             timestamp=datetime.now()
         )
