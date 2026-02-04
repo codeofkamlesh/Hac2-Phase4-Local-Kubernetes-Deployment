@@ -67,8 +67,9 @@ export default function ChatWidget({ refreshTasks }: ChatWidgetProps = {}) {
       console.log("Sending message as User ID:", session.user.id);
 
       try {
-        // Call the Python backend
-        const response = await fetch('http://127.0.0.1:8000/api/chat', {
+        // Call the Python backend using environment variable
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://kamlesh-todo-backend.hf.space';
+        const response = await fetch(`${apiUrl}/api/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

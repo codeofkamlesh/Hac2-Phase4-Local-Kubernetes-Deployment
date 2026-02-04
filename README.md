@@ -4,7 +4,7 @@
 
 ### Environment Variables
 
-For proper authentication setup, ensure the following environment variables are configured correctly:
+For proper  authentication setup, ensure the following environment variables are configured correctly:
 
 #### Backend (phase2/backend/.env)
 ```env
