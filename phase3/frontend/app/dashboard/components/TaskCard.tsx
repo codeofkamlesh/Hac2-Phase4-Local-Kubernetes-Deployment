@@ -18,7 +18,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit, onDelete, onComplete 
   // Helpers
   const getDueDate = () => task.dueDate || task.due_date || (task as any).dueDate || null;
   const getRecurring = () => task.recurring || (task as any).recurring || null;
-  const getRecurrencePattern = () => task.recurrence_pattern || task.recurrencePattern || (task as any).recurrencePattern || null;
+  const getRecurrencePattern = () => (task as any).recurrence_pattern || (task as any).recurrencePattern || null;
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '';
