@@ -23,7 +23,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
     tags: [],
     dueDate: '',           // Changed from due_date
     recurring: false,      // New field for recurring
-    recurrencePattern: '', // New field for recurrence pattern
+    recurrencePattern: 'daily', // Default valid value to satisfy TypeScript
   });
 
   // Helper specifically for the Checkbox UI
