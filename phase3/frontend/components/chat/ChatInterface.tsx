@@ -47,20 +47,27 @@ export default function ChatInterface({
     }
   };
 
-  return (
+ return (
     <div className="flex flex-col h-full">
       {/* Message List */}
       <div className="flex-grow overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-200px)]">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-            <p>Add/Edit task like this:</p>
-                <p>Add new task "your task name" or Edit "task name"</p>
-                <p>decription = "your description"</p>
-                <p>priority = "high/medium/low"</p>
-                <p>tag = "1st tag" , "2nd tag"</p>
-                <p>due date = MM/DD/YYYY HH:MM AM/PM</p>
-                <p>repeat = daily/weekly/monthly</p>
-                <p>mark "task name" as complete/incomplete</p>
+            {/* Inner Wrapper for Line-by-Line Layout */}
+            <div className="flex flex-col space-y-1 text-left text-sm">
+                <p className="font-bold mb-2">Add/Edit task like this:</p>
+
+                <p>• Add new task "your task name" / Edit "task name"</p>
+                {/* Indentation added for clarity */}
+                <div className="pl-4 flex flex-col space-y-1">
+                    <p>description = "your description"</p>
+                    <p>priority = "high/medium/low"</p>
+                    <p>tag = "1st tag" , "2nd tag"</p>
+                    <p>due date = MM/DD/YYYY HH:MM AM/PM</p>
+                    <p>repeat = daily/weekly/monthly</p>
+                </div>
+                <p className="mt-2">• Mark "task name" as complete/incomplete</p>
+            </div>
           </div>
         ) : (
           <>
