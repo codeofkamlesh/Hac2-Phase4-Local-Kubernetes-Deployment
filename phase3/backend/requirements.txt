@@ -1,9 +1,22 @@
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-sqlmodel==0.0.14
-psycopg2-binary==2.9.9
-pyjwt==2.8.0
-python-dotenv==1.0.0
-pydantic==2.5.3
-pydantic[email]==2.5.3
-bcrypt==4.1.2
+# fastapi==0.109.0
+# uvicorn[standard]==0.27.0
+# sqlmodel==0.0.14
+# psycopg2-binary==2.9.9
+# pyjwt==2.8.0
+# python-dotenv==1.0.0
+# pydantic==2.5.3
+# pydantic[email]==2.5.3
+# bcrypt==4.1.2
+
+fastapi
+uvicorn[standard]
+sqlmodel
+psycopg2-binary
+pyjwt
+python-dotenv
+pydantic
+pydantic[email]
+bcrypt
+cohere
+python-dateutil
+requests

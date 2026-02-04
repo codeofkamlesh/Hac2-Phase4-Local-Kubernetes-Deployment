@@ -53,7 +53,16 @@ export default function ChatInterface({
       <div className="flex-grow overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-200px)]">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-            <p>No messages yet. Start the conversation!</p>
+            <p>Add/Edit task like this:
+                Add new task or Edit "your task name"
+                decription = "your description"
+                priority = "high/medium/low"
+                tag = "1st tag" , "2nd tag"
+                due date = MM/DD/YYYY HH:MM AM/PM
+                repeat = daily/weekly/monthly
+                mark "task name" as complete/incomplete
+
+            </p>
           </div>
         ) : (
           <>
