@@ -23,7 +23,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
     tags: [],
     dueDate: '',           // Changed from due_date
     recurring: false,      // New field for recurring
-    recurrencePattern: '', // New field for recurrence pattern
+    recurrencePattern: 'daily', // Default valid value to satisfy TypeScript
   });
 
   // Helper specifically for the Checkbox UI
@@ -47,7 +47,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
 
         // 2. Recurring Handling
         const recurBool = task.recurring || (task as any).recurring || false;
-        const recurPattern = task.recurrence_pattern || task.recurrencePattern || (task as any).recurrencePattern || '';
+        // FIX: Default to 'daily' instead of '' to satisfy Type requirements
+        const recurPattern = (task as any).recurrence_pattern || (task as any).recurrencePattern || 'daily';
 
         setFormData({
           title: task.title || '',
@@ -71,7 +72,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
           tags: [],
           dueDate: '',
           recurring: false,
-          recurrencePattern: '',
+          recurrencePattern: 'daily', // FIX: Set to 'daily' instead of '' (Line 74 error solved)
         });
         setIsRecurring(false);
       }
@@ -104,7 +105,8 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
     setFormData(prev => ({
       ...prev,
       recurring: checked,
-      recurrencePattern: checked ? prev.recurrencePattern : ''  // Clear pattern when unchecked
+      // FIX: Keep existing pattern or default to 'daily'. Never set to ''. (Line 104-108 error solved)
+      recurrencePattern: checked ? prev.recurrencePattern : 'daily'
     }));
   };
 
@@ -317,13 +319,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, task }
                         <select
                           name="recurrencePattern" // ✅ Matched state key
                           id="recurrencePattern"
-                          value={formData.recurrencePattern || ''}
+                          value={formData.recurrencePattern || 'daily'}
                           onChange={handleChange}
                           className={`mt-1 block w-full border ${
                             errors.recurrencePattern ? 'border-red-300' : 'border-gray-300 dark:border-gray-600'
                           } rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-white`}
                         >
-                          <option value="">Select pattern</option>
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
                           <option value="monthly">Monthly</option>
