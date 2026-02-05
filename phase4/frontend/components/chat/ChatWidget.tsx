@@ -68,7 +68,7 @@ export default function ChatWidget({ refreshTasks }: ChatWidgetProps = {}) {
 
       try {
         // Call the Python backend using environment variable
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://kamlesh-todo-backend.hf.space';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://kamlesh-kumar125-hac2-phase4-local-kubernetes-deployment.hf.space';
         const response = await fetch(`${apiUrl}/api/chat`, {
           method: 'POST',
           headers: {
