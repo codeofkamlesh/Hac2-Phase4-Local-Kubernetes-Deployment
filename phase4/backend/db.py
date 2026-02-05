@@ -70,6 +70,8 @@ def create_db_and_tables():
                     conn.commit()
                     print("✅ Added updatedAt column to conversations table")
                 except Exception as e:
+                    # Rollback the transaction in case of error to prevent failed transaction state
+                    conn.rollback()
                     print(f"Info: Could not add updatedAt column (might already exist): {e}")
     except Exception as e:
         print(f"Error creating database tables: {e}")

@@ -500,6 +500,7 @@ async def chat_endpoint(
         )
 
     except Exception as e:
+        session.rollback()
         import traceback
         traceback.print_exc()
         print(f"❌ CRITICAL ERROR: {e}")
@@ -539,6 +540,7 @@ def get_user_conversations(user_id: str, session: Session = Depends(lambda: next
 
         return result
     except Exception as e:
+        session.rollback()
         print(f"Error retrieving conversations: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving conversations: {str(e)}")
 
@@ -570,6 +572,7 @@ def get_conversation_messages(conversation_id: str, session: Session = Depends(l
 
         return result
     except Exception as e:
+        session.rollback()
         print(f"Error retrieving messages: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving messages: {str(e)}")
 

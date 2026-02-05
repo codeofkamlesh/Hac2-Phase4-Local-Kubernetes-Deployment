@@ -110,6 +110,7 @@ async def signup(data: SignupRequest, session: Session = Depends(get_session)):
     except HTTPException:
         raise
     except Exception as e:
+        session.rollback()
         print(f"❌ Signup error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -164,6 +165,7 @@ async def login(data: LoginRequest, session: Session = Depends(get_session)):
     except HTTPException:
         raise
     except Exception as e:
+        session.rollback()
         print(f"❌ Login error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

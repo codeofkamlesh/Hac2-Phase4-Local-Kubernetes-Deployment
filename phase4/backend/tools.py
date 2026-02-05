@@ -198,6 +198,7 @@ def list_tasks(session: Session, status: Optional[str] = None, limit: int = 10, 
             "count": len(task_list)
         }
     except Exception as e:
+        session.rollback()
         print(f"❌ Tool Failed: {str(e)}")
         return {
             "success": False,
@@ -500,6 +501,7 @@ def get_conversation_history(conversation_id: str, session: Session) -> list:
 
         return message_list
     except Exception as e:
+        session.rollback()
         print(f"Error retrieving conversation history: {str(e)}")
         return []
 
