@@ -121,9 +121,13 @@ def get_cohere_client():
     api_key = os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Cohere API key not configured")
-    # FIX APPLIED HERE: Added timeout=120 (seconds)
-    # This prevents the "ReadTimeout" error by giving AI 2 minutes to respond
-    return CohereClient(api_key=api_key, timeout=120)
+
+    # ---------------------------------------------------------
+    # FIX: Timeout increased to 300 seconds (5 Minutes)
+    # This ensures "ReadTimeout" errors don't happen during
+    # long AI thinking processes.
+    # ---------------------------------------------------------
+    return CohereClient(api_key=api_key, timeout=300)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -487,9 +491,11 @@ async def chat_endpoint(
         )
 
     except Exception as e:
-        # FIX: Crash Proof Rollback
-        # Agar DB connection pehle hi toot chuka ho to rollback bhi error deta hai.
-        # Isay try-except mein wrap kiya gaya hai taake server 500 na ho.
+        # ---------------------------------------------------------
+        # FIX: Safe Rollback
+        # Wraps session.rollback() in try/except to prevent
+        # crashing if the DB connection is already lost.
+        # ---------------------------------------------------------
         try:
             session.rollback()
         except Exception as rollback_error:
@@ -534,7 +540,10 @@ def get_user_conversations(user_id: str, session: Session = Depends(lambda: next
 
         return result
     except Exception as e:
-        session.rollback()
+        try:
+            session.rollback()
+        except:
+            pass
         print(f"Error retrieving conversations: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving conversations: {str(e)}")
 
@@ -566,7 +575,10 @@ def get_conversation_messages(conversation_id: str, session: Session = Depends(l
 
         return result
     except Exception as e:
-        session.rollback()
+        try:
+            session.rollback()
+        except:
+            pass
         print(f"Error retrieving messages: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving messages: {str(e)}")
 
