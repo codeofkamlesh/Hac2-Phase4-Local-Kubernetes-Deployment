@@ -1,26 +1,17 @@
-# Python image
-FROM python:3.10
+FROM python:3.12-slim
 
-# Ye line Docker container ke andar '/app' folder banayegi
-# Aapke PC par 'app' folder hona zaroori nahi hai
+# 1. Root ke bajaye /app folder use karein (Safe)
 WORKDIR /app
 
-# Requirements copy aur install
+# 2. Requirements pehle copy karein
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Aapki saari files (main.py, models, routes etc.) container ke '/app' folder me copy hongi
+# 3. Baqi code copy karein
 COPY . .
 
-# User setup (Security ke liye)
-RUN useradd -m -u 1000 user
-USER user
-ENV HOME=/home/user \
-	PATH=/home/user/.local/bin:$PATH
+# 4. Port expose
+EXPOSE 8000
 
-# Port expose
-EXPOSE 7860
-
-# Start command
-# Kyunki image me 'main.py' dikh raha hai, ye command sahi chalegi:
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+# 5. Command
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

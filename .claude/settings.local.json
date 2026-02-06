@@ -166,7 +166,10 @@
       "Bash(python3 test_recurrence_fix_correct.py)",
       "Bash(python3 verify_history.py)",
       "Bash(python -c \"import main; print\\(''Import successful''\\)\")",
-      "Bash(python3 -c \"import main; print\\(''Import successful''\\)\")"
+      "Bash(python3 -c \"import main; print\\(''Import successful''\\)\")",
+      "Bash(git fetch:*)",
+      "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
+      "Bash(docker build:*)"
     ]
   }
 }

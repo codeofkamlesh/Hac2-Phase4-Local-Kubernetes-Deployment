@@ -1,0 +1,25 @@
+backend:
+  image: todo-backend
+  tag: latest
+  port: 8000
+  replicaCount: 1
+
+frontend:
+  image: todo-frontend
+  tag: latest
+  port: 3000
+  replicaCount: 1
+
+database:
+  url: ""
+  secretName: todo-db-secret
+
+ai:
+  cohereKey: ""
+
+env:
+  databaseUrl: ""      # Will be passed via --set
+  cohereApiKey: ""     # Will be passed via --set
+  betterAuthSecret: "" # Will be passed via --set
+  betterAuthUrl: "http://todo-frontend-service:3000" # Internal URL
+  nextPublicApiUrl: "http://localhost:8000" # Browser access URL

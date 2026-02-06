@@ -9,6 +9,7 @@ from datetime import datetime
 from cohere import Client as CohereClient
 import cohere
 from sqlmodel import Session, select
+from sqlalchemy.exc import OperationalError
 
 from db import create_db_and_tables, test_connection, get_session
 from models import Message, Conversation, MessageRoleEnum, Task, User
@@ -21,6 +22,11 @@ from tools import (
     get_conversation_history,
     add_message_to_conversation
 )
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # System Preamble for Schema Enforcement
 SYSTEM_PREAMBLE = "You are a Task Assistant. You operate on 'User', 'Task' (id, title, description, priority, completed, dueDate, userId), 'Conversation', 'Message' tables. DO NOT hallucinate columns. Use tools strictly."
@@ -50,11 +56,6 @@ def ensure_user_exists(session: Session, user_id: str) -> User:
     else:
         print(f"✅ User Found. ID: {user_id}")
         return user
-
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 # Lifespan context manager for startup events
@@ -90,6 +91,7 @@ app = FastAPI(
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://0.0.0.0:3000",
     "https://hac2-phase3-ai-powered-todo-app-wit.vercel.app"
 ]
 
@@ -119,7 +121,9 @@ def get_cohere_client():
     api_key = os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="Cohere API key not configured")
-    return CohereClient(api_key=api_key)
+    # FIX APPLIED HERE: Added timeout=120 (seconds)
+    # This prevents the "ReadTimeout" error by giving AI 2 minutes to respond
+    return CohereClient(api_key=api_key, timeout=120)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -204,9 +208,6 @@ async def chat_endpoint(
 
         # Token Conservation: Limit to last 10 messages to save tokens
         sanitized_history = sanitized_history[-10:]
-
-        # The user's current message is already in the database and retrieved in raw_history,
-        # so we don't need to add it again. The sanitized_history already contains it.
 
         # Define the tools that Cohere can use
         tools = [
@@ -325,13 +326,6 @@ async def chat_endpoint(
             # Paranoid Logging Step 5: Send to Cohere
             print("🤖 Sending request to Cohere...")
 
-            # DEBUG: Print the sanitized history before sending to Cohere
-            print(f"DEBUG: About to send clean_chat_history with {len(sanitized_history)} items:")
-            for idx, hist_item in enumerate(sanitized_history):
-                role = hist_item.get("role", "MISSING_ROLE")
-                message = hist_item.get("message", "MISSING_MESSAGE")
-                print(f"DEBUG[{idx}]: role='{role}', message='{message}', type_msg={type(message)}, is_none={message is None}")
-
             # Comprehensive sanitization of chat_history before sending to Cohere
             # Make a clean copy to ensure no None values
             clean_chat_history = []
@@ -341,11 +335,11 @@ async def chat_endpoint(
                 message = hist_item.get("message")
 
                 if message is None:
-                    print(f"DEBUG: Sanitizing None message at index {idx}, role: {role}")
+                    # print(f"DEBUG: Sanitizing None message at index {idx}, role: {role}")
                     message = " "  # Use space instead of empty string to avoid "no message" error
                 elif message == "":
                     # Even empty strings might cause the error, so replace with space
-                    print(f"DEBUG: Converting empty message to space at index {idx}, role: {role}")
+                    # print(f"DEBUG: Converting empty message to space at index {idx}, role: {role}")
                     message = " "
 
                 clean_chat_history.append({
@@ -353,11 +347,7 @@ async def chat_endpoint(
                     "message": str(message) if message is not None else " "
                 })
 
-            # Final verification
-            print(f"DEBUG: Final clean_chat_history: {clean_chat_history}")
-
             # Call Cohere:
-            # response = cohere_client.chat(message=current_message, chat_history=sanitized_history, tool_results=current_tool_results, preamble=SYSTEM_PREAMBLE, ...)
             try:
                 response = cohere_client.chat(
                     message=current_message,
@@ -374,13 +364,13 @@ async def chat_endpoint(
                 # Fallback to command-light if primary model fails
                 response = cohere_client.chat(
                     message=current_message,
-                    chat_history=clean_chat_history,  # Use the completely sanitized version
+                    chat_history=clean_chat_history,
                     tool_results=current_tool_results,
                     tools=tools,
-                    preamble=SYSTEM_PREAMBLE,  # Pass the system preamble
-                    model="command-light",  # Failsafe fallback model
-                    max_tokens=150,  # Token conservation: force concise responses
-                    temperature=0.3  # Lower temperature for more consistent behavior
+                    preamble=SYSTEM_PREAMBLE,
+                    model="command-light",
+                    max_tokens=150,
+                    temperature=0.3
                 )
 
             # If Tools Triggered:
@@ -389,7 +379,6 @@ async def chat_endpoint(
                 tool_results = []
 
                 # Add Assistant's response to history BEFORE processing tools
-                # Force message to be an empty string if it's None
                 assistant_msg_text = response.text if hasattr(response, 'text') and response.text else ""
                 sanitized_history.append({
                     "role": "CHATBOT",
@@ -438,13 +427,11 @@ async def chat_endpoint(
 
                 # Add Assistant's tool plan:
                 sanitized_history.append({
-                    "role": "CHATBOT",  # As specified in requirements
+                    "role": "CHATBOT",
                     "message": ""  # As specified in requirements
                 })
 
                 # Prepare Next Turn:
-                # current_message = ""
-                # current_tool_results = tool_results_list
                 current_message = ""
                 current_tool_results = tool_results
 
@@ -500,7 +487,14 @@ async def chat_endpoint(
         )
 
     except Exception as e:
-        session.rollback()
+        # FIX: Crash Proof Rollback
+        # Agar DB connection pehle hi toot chuka ho to rollback bhi error deta hai.
+        # Isay try-except mein wrap kiya gaya hai taake server 500 na ho.
+        try:
+            session.rollback()
+        except Exception as rollback_error:
+            print(f"⚠️ Rollback failed (likely due to lost connection): {rollback_error}")
+
         import traceback
         traceback.print_exc()
         print(f"❌ CRITICAL ERROR: {e}")
