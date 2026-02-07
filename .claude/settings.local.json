@@ -169,7 +169,10 @@
       "Bash(python3 -c \"import main; print\\(''Import successful''\\)\")",
       "Bash(git fetch:*)",
       "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
-      "Bash(docker build:*)"
+      "Bash(docker build:*)",
+      "Bash(.testify/scripts/bash/check-prerequisites.sh:*)",
+      "Bash(.ls -la .specify/scripts/bash/)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)"
     ]
   }
 }

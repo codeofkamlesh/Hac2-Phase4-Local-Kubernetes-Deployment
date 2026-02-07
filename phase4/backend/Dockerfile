@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # 1. Root ke bajaye /app folder use karein (Safe)
-WORKDIR /app
+WORKDIR /
 
 # 2. Requirements pehle copy karein
 COPY requirements.txt .

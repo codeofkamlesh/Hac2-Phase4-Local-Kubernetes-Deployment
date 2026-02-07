@@ -1,6 +1,6 @@
 # Multi-stage build for Next.js frontend
 # Builder stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -19,7 +19,7 @@ COPY . .
 RUN npm run build
 
 # Runner stage
-FROM node:18-alpine AS runner
+FROM node:20-alpine AS runner
 ENV HOSTNAME="0.0.0.0"
 
 # Set working directory
